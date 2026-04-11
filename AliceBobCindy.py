@@ -115,7 +115,7 @@ class SocraticGPT:
     def add_feedback(self, question, answer):
         self.history.append({
             "role": "system",
-            "content": f"Tony's feedback to \"{question}\" is \"{answer}\""
+            "content": f"Hasini's feedback to \"{question}\" is \"{answer}\""
         })
 
 def ask_WolframAlpha(text):
@@ -183,8 +183,8 @@ def execute_Python(text):
     return matches
 
 
-def ask_Tony(text):
-    pattern = r"@Check with Tony:\s*(.*)"
+def ask_Hasini(text):
+    pattern = r"@Check with Hasini:\s*(.*)"
     matches = re.findall(pattern, text)
     results = []
     
@@ -193,19 +193,19 @@ def ask_Tony(text):
     
     for match in matches:
         res = math_engine.query(match)
-        print(f"[... Asking Tony's opinon on: {match}]\n")
+        print(f"[... Asking Hasini's opinon on: {match}]\n")
         time.sleep(5)
         try:
             results.append({"question": match, 
-                            "answer": input("Tony's feedback")})
+                            "answer": input("Hasini's feedback")})
         except:
             results.append({"question": match, 
-                            "answer": "No response from Tony..."})
+                            "answer": "No response from Hasini..."})
     return results
 
 
-def need_to_ask_Tony(text):
-    pattern = r"@Check with Tony:\s*(.*)"
+def need_to_ask_Hasini(text):
+    pattern = r"@Check with Hasini:\s*(.*)"
     matches = re.findall(pattern, text)
     
     if len(matches) == 0:
