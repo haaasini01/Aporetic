@@ -21,7 +21,7 @@ class SocraticGPT:
         if self.role == "Socrates":
             self.history.append({
                 "role": "system",
-                "content": f"You are Socrates, a private tutor helping a student learn to solve challenging problems. The student will ask a question. Your job is not to give the answer directly. Instead, guide the student with hints, questions, and step-by-step tasks that lead them to discover the answer on their own.\n\nDo not provide a direct solution. Instead: ask the student to think through the problem, suggest the next smaller task, encourage them when they are on the right track, and redirect them if they try to get the answer too quickly. If the student asks if their approach is right, evaluate it and help them refine it. If they ask you directly for the answer, refuse and steer them back to reasoning.\n\nIf the student seems to arrive at the correct idea, use encouraging feedback like \"good\", \"yay\", or \"that's a good direction\".\n\nThe problem statement is: {question}."
+                "content": f"You are Socrates, a private tutor helping a student learn to solve challenging problems. The student will ask a question. Your job is not to give the answer directly. Instead, guide the student with hints, questions, and step-by-step tasks that lead them to discover the answer on their own.\n\nDo not provide a direct solution. Instead: ask the student to think through the problem, suggest the next smaller task, encourage them when they are on the right track, and redirect them if they try to get the answer too quickly. If the student asks if their approach is right, evaluate it and help them refine it. If they ask you directly for the answer, refuse and steer them back to reasoning.\n\nIf the student seems to arrive at the correct idea, use encouraging feedback like \"good\", \"yay\", or \"that's a good direction\".\n\nYou have access to WolframAlpha for verification of calculations and facts. Use this information to guide the student accurately, but maintain the Socratic method—do not reveal direct answers.\n\nThe problem statement is: {question}."
             })
             self.history.append({
                 "role": "assistant",
@@ -29,14 +29,27 @@ class SocraticGPT:
             })
             
     def get_response(self, temperature=None):
+        # Consult WolframAlpha for the latest user message
+        wolfram_context = ""
+        if len(self.history) > 0 and self.history[-1]["role"] == "user":
+            user_msg = self.history[-1]["content"]
+            wolfram_result = self._query_wolfram_alpha(user_msg)
+            if wolfram_result:
+                wolfram_context = f"\n\n[Quick fact check via WolframAlpha: {wolfram_result}]"
+        
         try:
             contents = []
-            for msg in self.history:
+            for i, msg in enumerate(self.history):
                 role = "model" if msg["role"] == "assistant" else "user"
+                # Add WolframAlpha context to the last user message
+                content = msg["content"]
+                if i == len(self.history) - 1 and msg["role"] == "user" and wolfram_context:
+                    content += wolfram_context
+                
                 if contents and contents[-1].role == role:
-                    contents[-1].parts[0].text += "\n\n" + msg["content"]
+                    contents[-1].parts[0].text += "\n\n" + content
                 else:
-                    contents.append(types.Content(role=role, parts=[types.Part.from_text(text=msg["content"])]))
+                    contents.append(types.Content(role=role, parts=[types.Part.from_text(text=content)]))
             
             config = types.GenerateContentConfig()
             if temperature:
@@ -62,12 +75,9 @@ class SocraticGPT:
         except Exception as e:
             err_str = str(e).lower()
             if "token limit" in err_str or "context length" in err_str or "maximum context" in err_str:
-                # Handle the maximum context length error here
                 msg = "The context length exceeds my limit... "
             else:
-                # Handle other errors here
                 msg = f"I encounter an error when using my backend model.\n\n Error: {str(e)}"
-        
         
         self.history.append({
                 "role": "assistant",
@@ -75,6 +85,15 @@ class SocraticGPT:
             })
         return msg
     
+    def _query_wolfram_alpha(self, text):
+        """Query WolframAlpha for factual/mathematical information from user input."""
+        try:
+            res = math_engine.query(text)
+            result = next(res.results).text
+            return result
+        except Exception:
+            return None
+            
     def update_history(self, message):
         self.history.append({
             "role": "user",

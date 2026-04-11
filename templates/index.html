@@ -276,6 +276,41 @@
             }
             .copy-code-btn:hover { color: #fff; }
 
+            /* Loading indicator */
+            .loading-indicator {
+                display: flex;
+                align-items: center;
+                gap: 0.5rem;
+                padding: 1rem;
+            }
+
+            .loading-dots {
+                display: flex;
+                gap: 0.4rem;
+                align-items: center;
+            }
+
+            .dot {
+                width: 8px;
+                height: 8px;
+                border-radius: 50%;
+                background: var(--orange-primary);
+                animation: pulse 1.4s infinite;
+            }
+
+            .dot:nth-child(2) {
+                animation-delay: 0.2s;
+            }
+
+            .dot:nth-child(3) {
+                animation-delay: 0.4s;
+            }
+
+            @keyframes pulse {
+                0%, 100% { opacity: 0.4; }
+                50% { opacity: 1; }
+            }
+
             /* Input area container */
             .input-container {
                 width: 100%;
