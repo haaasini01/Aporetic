@@ -1,6 +1,7 @@
-Flask==2.2.3
-Flask-Session==0.4.0
-google-genai
+streamlit==1.28.1
+langchain==0.1.0
+langchain-google-genai==0.0.6
+google-generativeai==0.3.1
 wolframalpha==5.0.0
-Werkzeug==2.2.3
-python-dotenv
+python-dotenv==1.0.0
+pydantic==2.5.0

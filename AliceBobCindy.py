@@ -1,90 +1,73 @@
 import os
 import re
 import time
-from google import genai
-from google.genai import types
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain.schema import HumanMessage, AIMessage, SystemMessage
 import wolframalpha
 from dotenv import load_dotenv
 
 load_dotenv()
 
-client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
 math_engine = wolframalpha.Client(os.environ.get("WOLFRAM_APP_ID"))
 
 class SocraticGPT:
-    def __init__(self, role, n_round=10, model="gemini-2.5-flash"):
+    def __init__(self, role, n_round=10, model="gemini-2.0-flash"):
         self.role = role
         self.model = model
         self.n_round = n_round
         self.history = []
+        google_api_key = os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY")
+        if not google_api_key:
+            raise ValueError(
+                "Missing Google API key. Set GOOGLE_API_KEY or GEMINI_API_KEY in your environment."
+            )
+        self.llm = ChatGoogleGenerativeAI(
+            model=model,
+            google_api_key=google_api_key,
+            temperature=0.7,
+            convert_system_message_to_human=True  # FIX: Gemini does not support SystemMessage natively
+        )
+        
     def set_question(self, question):
         if self.role == "Socrates":
-            self.history.append({
-                "role": "system",
-                "content": f"You are Socrates, a private tutor helping a student learn to solve challenging problems. The student will ask a question. Your job is not to give the answer directly. Instead, guide the student with hints, questions, and step-by-step tasks that lead them to discover the answer on their own.\n\nDo not provide a direct solution. Instead: ask the student to think through the problem, suggest the next smaller task, encourage them when they are on the right track, and redirect them if they try to get the answer too quickly. If the student asks if their approach is right, evaluate it and help them refine it. If they ask you directly for the answer, refuse and steer them back to reasoning.\n\nIf the student seems to arrive at the correct idea, use encouraging feedback like \"good\", \"yay\", or \"that's a good direction\".\n\nYou have access to WolframAlpha for verification of calculations and facts. Use this information to guide the student accurately, but maintain the Socratic method—do not reveal direct answers.\n\nThe problem statement is: {question}."
-            })
-            self.history.append({
-                "role": "assistant",
-                "content": "Let's work through this together step by step. What part of the problem do you understand so far?"
-            })
-            
+            system_msg = (
+                f"You are Socrates, a private tutor helping a student learn to solve challenging problems. "
+                f"The student will ask a question. Your job is not to give the answer directly. "
+                f"Instead, guide them with hints and questions.\n\n"
+                f"IMPORTANT: Since this is the start of the session, your very first response must be: "
+                f"'Let's work through this together step by step. What part of the problem do you understand so far?'\n\n"
+                f"The problem statement is: {question}."
+            )
+            self.history.append(SystemMessage(content=system_msg))
+    
     def get_response(self, temperature=None):
-        # Consult WolframAlpha for the latest user message
         wolfram_context = ""
-        if len(self.history) > 0 and self.history[-1]["role"] == "user":
-            user_msg = self.history[-1]["content"]
+        if len(self.history) > 0 and isinstance(self.history[-1], HumanMessage):
+            user_msg = self.history[-1].content
             wolfram_result = self._query_wolfram_alpha(user_msg)
             if wolfram_result:
                 wolfram_context = f"\n\n[Quick fact check via WolframAlpha: {wolfram_result}]"
         
         try:
-            contents = []
-            for i, msg in enumerate(self.history):
-                role = "model" if msg["role"] == "assistant" else "user"
-                # Add WolframAlpha context to the last user message
-                content = msg["content"]
-                if i == len(self.history) - 1 and msg["role"] == "user" and wolfram_context:
-                    content += wolfram_context
-                
-                if contents and contents[-1].role == role:
-                    contents[-1].parts[0].text += "\n\n" + content
-                else:
-                    contents.append(types.Content(role=role, parts=[types.Part.from_text(text=content)]))
+            messages_to_send = self.history.copy()
+            if wolfram_context and len(messages_to_send) > 0 and isinstance(messages_to_send[-1], HumanMessage):
+                messages_to_send[-1] = HumanMessage(content=messages_to_send[-1].content + wolfram_context)
             
-            config = types.GenerateContentConfig()
-            if temperature:
-                config.temperature = temperature
-                
-            max_retries = 3
-            for attempt in range(max_retries):
-                try:
-                    res = client.models.generate_content(
-                        model=self.model,
-                        contents=contents,
-                        config=config
-                    )
-                    msg = res.text
-                    break
-                except Exception as api_err:
-                    err_msg = str(api_err).lower()
-                    if attempt < max_retries - 1 and ("429" in err_msg or "quota" in err_msg or "limit" in err_msg or "retry" in err_msg):
-                        time.sleep(60)
-                    else:
-                        raise api_err
-
+            res = self.llm.invoke(messages_to_send)
+            msg = res.content
+            
         except Exception as e:
+            print(f"!!! Backend Error: {e}") 
+            
             err_str = str(e).lower()
-            if "token limit" in err_str or "context length" in err_str or "maximum context" in err_str:
+            if "token limit" in err_str or "context length" in err_str:
                 msg = "The context length exceeds my limit... "
             else:
-                msg = f"I encounter an error when using my backend model.\n\n Error: {str(e)}"
+                msg = f"I encounter an error when using my backend model.\n\nError details: {str(e)}"
         
-        self.history.append({
-                "role": "assistant",
-                "content": msg
-            })
+        self.history.append(AIMessage(content=msg))
         return msg
-    
+
     def _query_wolfram_alpha(self, text):
         """Query WolframAlpha for factual/mathematical information from user input."""
         try:
@@ -95,28 +78,20 @@ class SocraticGPT:
             return None
             
     def update_history(self, message):
-        self.history.append({
-            "role": "user",
-            "content": message
-        })
+        self.history.append(HumanMessage(content=message))
         
     def add_reference(self, question, answer):
-        self.history.append({
-            "role": "system",
-            "content": f"The WolframAlpha answer to \"{question}\" is \"{answer}\""
-        })
+        # FIX: Use HumanMessage + AIMessage pair instead of SystemMessage
+        self.history.append(HumanMessage(content=f"What is the answer to: \"{question}\"?"))
+        self.history.append(AIMessage(content=f"According to WolframAlpha, the answer is: \"{answer}\""))
 
     def add_python_feedback(self, msg):
-        self.history.append({
-            "role": "system",
-            "content": f"Excuting the Python script. It returns \"{msg}\""
-        })
+        # FIX: Use HumanMessage instead of SystemMessage
+        self.history.append(HumanMessage(content=f"I executed the Python script and it returned: \"{msg}\""))
         
     def add_feedback(self, question, answer):
-        self.history.append({
-            "role": "system",
-            "content": f"Hasini's feedback to \"{question}\" is \"{answer}\""
-        })
+        # FIX: Use HumanMessage instead of SystemMessage
+        self.history.append(HumanMessage(content=f"Hasini's feedback to \"{question}\" is \"{answer}\""))
 
 def ask_WolframAlpha(text):
     pattern = r"@Check with WolframAlpha:\s*(.*)"
@@ -186,22 +161,11 @@ def execute_Python(text):
 def ask_Hasini(text):
     pattern = r"@Check with Hasini:\s*(.*)"
     matches = re.findall(pattern, text)
-    results = []
     
     if len(matches) == 0:
         return None
     
-    for match in matches:
-        res = math_engine.query(match)
-        print(f"[... Asking Hasini's opinon on: {match}]\n")
-        time.sleep(5)
-        try:
-            results.append({"question": match, 
-                            "answer": input("Hasini's feedback")})
-        except:
-            results.append({"question": match, 
-                            "answer": "No response from Hasini..."})
-    return results
+    return matches
 
 
 def need_to_ask_Hasini(text):
