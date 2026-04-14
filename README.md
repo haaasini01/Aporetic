@@ -1,4 +1,4 @@
-# SocraticAI
+# Aporetic
 
 An AI tutor that uses the Socratic method to help students learn through guided questions instead of direct answers.
 
